@@ -1,6 +1,9 @@
 # GRUB2 Theme - Caelestia Nexus
 title-text: ""
 desktop-image: "background.png"
+desktop-image-scale-method: "crop"
+desktop-image-h-align: "center"
+desktop-image-v-align: "center"
 terminal-font: "Roboto Mono Regular 22"
 terminal-left: "20%"
 terminal-top: "20%"
@@ -8,9 +11,19 @@ terminal-width: "60%"
 terminal-height: "60%"
 terminal-border: "0"
 
+# The panel is separate from the wallpaper so cropping cannot distort the layout.
+# generate.py updates these centered offsets for the target resolution.
++ image {
+  left = 50%-610
+  top = 50%-426
+  width = 1220
+  height = 820
+  file = "panel.png"
+}
+
 + boot_menu {
-  left = 380
-  top = 230
+  left = 50%-580
+  top = 50%-326
   width = 1160
   height = 620
   item_font = "Google Sans Flex Regular 22"
@@ -26,8 +39,8 @@ terminal-border: "0"
 
 + progress_bar {
   id = "__timeout__"
-  left = 380
-  top = 960
+  left = 50%-580
+  top = 50%+404
   width = 1160
   height = 12
   bar_style = "timeout_bg_*.png"
