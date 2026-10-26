@@ -11,16 +11,6 @@ terminal-width: "60%"
 terminal-height: "60%"
 terminal-border: "0"
 
-# The panel is separate from the wallpaper so cropping cannot distort the layout.
-# generate.py updates these centered offsets for the target resolution.
-+ image {
-  left = 50%-610
-  top = 50%-426
-  width = 1220
-  height = 820
-  file = "panel.png"
-}
-
 + boot_menu {
   left = 50%-580
   top = 50%-326
@@ -45,4 +35,15 @@ terminal-border: "0"
   height = 12
   bar_style = "timeout_bg_*.png"
   highlight_style = "timeout_hl_*.png"
+}
+
+# GRUB paints canvas children in reverse order; declare the panel last to keep it behind the menu.
+# The panel is separate from the wallpaper so cropping cannot distort the layout.
+# generate.py updates these centered offsets for the target resolution.
++ image {
+  left = 50%-610
+  top = 50%-426
+  width = 1220
+  height = 820
+  file = "panel.png"
 }
