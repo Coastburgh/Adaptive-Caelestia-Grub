@@ -23,7 +23,7 @@ Item {
     }
 
     Item {
-        id: nexusWindow
+        id: adaptiveWindow
         width: 1200
         height: 800
         x: (root.width - Config.layout.panelWidth) / 2

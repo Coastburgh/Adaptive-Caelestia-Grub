@@ -301,7 +301,7 @@ def create_wallpaper(scheme_colors, scheme_meta, shell_cfg):
     """Keep the source aspect ratio so GRUB can crop it for the actual boot viewport."""
     import tempfile
     wp_path = get_active_wallpaper()
-    with tempfile.TemporaryDirectory(prefix="caelestia-grub-") as directory:
+    with tempfile.TemporaryDirectory(prefix="adaptive-caelestia-grub-") as directory:
         if wp_path.lower().endswith(('.mp4', '.mkv', '.webm', '.avi', '.gif', '.mov')):
             frame = os.path.join(directory, "frame.png")
             subprocess.run(
