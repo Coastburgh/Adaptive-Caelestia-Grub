@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
 if [ "$EUID" -ne 0 ]; then
@@ -69,8 +69,10 @@ trap 'rm -f -- "$DEPLOY_TEMP" "$SUDOERS_TEMP"' EXIT
 cat <<'PYTHON' > "$DEPLOY_TEMP"
 #!/usr/bin/python3 -I
 import fcntl
+import hashlib
 import os
 import pwd
+import re
 import shutil
 import stat
 import sys
@@ -107,7 +109,9 @@ def copy_assets(source, destination, uid, budget, allow_icons=True):
                 finally:
                     os.close(child)
                 continue
-            if not (name == "theme.txt" or name.endswith((".png", ".pf2"))):
+            # Font paths are emitted into grub.cfg, so reject command characters in every asset name.
+            if not (re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*\.png", name)
+                    or allow_icons and name in ("theme.txt", "font.pf2", "term.pf2")):
                 raise ValueError("Unexpected theme asset: " + name)
             fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=source)
             with os.fdopen(fd, "rb") as asset:
@@ -122,6 +126,8 @@ def copy_assets(source, destination, uid, budget, allow_icons=True):
                 budget[1] -= len(content)
                 if budget[1] < 0 or len(content) > 64 * 1024 * 1024:
                     raise ValueError("Theme exceeds the deployment size limit")
+            if name in FONT_HASHES and hashlib.sha256(content).hexdigest() != FONT_HASHES[name]:
+                raise ValueError("Fonts must match the files approved during installation")
             with open(os.path.join(destination, name), "xb") as output:
                 output.write(content)
             os.chmod(os.path.join(destination, name), 0o644)
@@ -156,8 +162,9 @@ def main():
                 copy_assets(source, payload, user.pw_uid, [512, 256 * 1024 * 1024])
             finally:
                 os.close(source)
-            if not os.path.isfile(payload + "/theme.txt"):
-                raise ValueError("Missing theme.txt")
+            for name in ("theme.txt", "font.pf2", "term.pf2"):
+                if not os.path.isfile(payload + "/" + name):
+                    raise ValueError("Missing required theme asset: " + name)
             target = parent + "/adaptive-caelestia-grub"
             # Move the old tree aside rather than writing through its existing links.
             previous = staging + "/previous"
@@ -175,9 +182,18 @@ def main():
 
 PYTHON
 # Serialize the username as data, never as shell or Python source interpolation.
-python3 -I - "$SUDO_USER" >> "$DEPLOY_TEMP" <<'PYTHON'
+python3 -I - "$SUDO_USER" "$PROJECT_ROOT/theme" >> "$DEPLOY_TEMP" <<'PYTHON'
+import hashlib
+from pathlib import Path
 import sys
+try:
+    fonts = {name: hashlib.sha256((Path(sys.argv[2]) / name).read_bytes()).hexdigest()
+             for name in ("font.pf2", "term.pf2")}
+except OSError as error:
+    sys.exit("ERROR: Could not approve bundled fonts: " + str(error))
 print("INSTALL_USER = " + repr(sys.argv[1]))
+# Fonts are static assets; passwordless sync must not introduce different font data.
+print("FONT_HASHES = " + repr(fonts))
 print('if __name__ == "__main__":')
 print('    try:')
 print('        main()')

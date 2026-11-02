@@ -1,4 +1,8 @@
+import ast
+import errno
+import hashlib
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import re
@@ -22,6 +26,26 @@ class InstallationNameTests(unittest.TestCase):
                 text = (ROOT / f"scripts/{script}.sh").read_text()
                 self.assertIn('if [ "$EUID" -ne 0 ]; then', text)
                 self.assertNotIn("id -u", text)
+
+    def test_privileged_scripts_ignore_path_controlled_bash_and_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / 'executed'
+            for name in ('bash', 'id'):
+                executable = root / name
+                executable.write_text('#!/bin/sh\nprintf executed > "$REVIEW_MARKER"\nexit 99\n')
+                executable.chmod(0o755)
+            environment = dict(os.environ, PATH=str(root), REVIEW_MARKER=str(marker))
+            # Both root and non-root test runs stop before any installation or removal.
+            environment.pop('SUDO_USER', None)
+            environment.pop('BASH_ENV', None)
+            for script in ('install', 'uninstall'):
+                with self.subTest(script=script):
+                    result = subprocess.run([str(ROOT / f'scripts/{script}.sh')], env=environment,
+                                            text=True, capture_output=True, timeout=5)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn('ERROR:', result.stderr)
+                    self.assertFalse(marker.exists())
 
     def test_installation_paths_match_across_scripts(self):
         for script in ("install", "uninstall", "sync"):
@@ -98,6 +122,8 @@ class DeploymentSecurityTests(unittest.TestCase):
         self.destination.mkdir()
         self.helper = types.ModuleType('deployment')
         exec(python_blocks(INSTALL)[1], self.helper.__dict__)
+        self.helper.FONT_HASHES = {name: hashlib.sha256(content).hexdigest()
+                                   for name, content in [('font.pf2', b'font'), ('term.pf2', b'term')]}
 
     def copy(self, budget=None):
         fd = self.helper.open_directory(str(self.source))
@@ -120,6 +146,60 @@ class DeploymentSecurityTests(unittest.TestCase):
     def test_empty_source_copies_nothing(self):
         self.copy()
         self.assertEqual(list(self.destination.iterdir()), [])
+
+    def test_command_characters_and_unapproved_font_names_are_rejected(self):
+        for name in ['font;reboot;#.pf2', 'font;reboot;#.png', 'font\nreboot.pf2',
+                     'font\nreboot.png', 'font name.png', 'font\tname.png', '$font.png',
+                     'font".png', "font'.png", 'font\\name.png', '.hidden.png',
+                     'font\x1b.png', 'fönt.png', 'extra.pf2', 'FONT.pf2']:
+            with self.subTest(name=name):
+                source = self.source / name
+                source.write_bytes(b'asset')
+                try:
+                    with self.assertRaises(ValueError):
+                        self.copy()
+                    self.assertEqual(list(self.destination.iterdir()), [])
+                finally:
+                    source.unlink()
+
+    def test_icons_accept_existing_distribution_names(self):
+        (self.source / 'icons').mkdir()
+        for source in (ROOT / 'src/icons').glob('*.png'):
+            (self.source / 'icons' / source.name).write_bytes(b'icon')
+        self.copy()
+        self.assertEqual(sorted(path.name for path in (self.destination / 'icons').iterdir()),
+                         sorted(path.name for path in (ROOT / 'src/icons').glob('*.png')))
+
+    def test_icons_reject_fonts_and_theme_configuration(self):
+        (self.source / 'icons').mkdir()
+        for name in ['font.pf2', 'term.pf2', 'theme.txt']:
+            with self.subTest(name=name):
+                source = self.source / 'icons' / name
+                source.write_bytes(b'asset')
+                try:
+                    with self.assertRaises(ValueError):
+                        self.copy()
+                finally:
+                    source.unlink()
+                    (self.destination / 'icons').rmdir()
+
+    def test_fonts_match_the_installation_snapshot(self):
+        for name, content in [('font.pf2', b'font'), ('term.pf2', b'term')]:
+            for candidate in [content, b'', b'modified']:
+                with self.subTest(name=name, content=candidate):
+                    source, destination = self.source / name, self.destination / name
+                    source.write_bytes(candidate)
+                    try:
+                        if candidate == content:
+                            self.copy()
+                            self.assertEqual(destination.read_bytes(), content)
+                        else:
+                            with self.assertRaises(ValueError):
+                                self.copy()
+                            self.assertFalse(destination.exists())
+                    finally:
+                        source.unlink()
+                        destination.unlink(missing_ok=True)
 
     def test_symlink_files_and_directories_are_rejected(self):
         outside = self.root / 'outside'
@@ -208,6 +288,8 @@ class DeploymentSecurityTests(unittest.TestCase):
         home = self.root / 'home'
         source = home / '.local/share/adaptive-caelestia-grub/theme'
         source.mkdir(parents=True)
+        (source / 'font.pf2').write_bytes(b'font')
+        (source / 'term.pf2').write_bytes(b'term')
         code = python_blocks(INSTALL)[1].replace('"/boot/grub/themes"', repr(str(parent)))
         exec(code, self.helper.__dict__)
         self.helper.INSTALL_USER = 'test-user'
@@ -257,13 +339,99 @@ class DeploymentSecurityTests(unittest.TestCase):
         source, target = self.deployment_environment()
         target.mkdir()
         (target / 'theme.txt').write_text('previous')
-        for invalid in ['missing', 'symlink']:
+        for invalid in ['missing', 'injection', 'modified-font', 'symlink']:
             with self.subTest(invalid=invalid):
+                if invalid != 'missing':
+                    (source / 'theme.txt').write_text('replacement')
+                if invalid == 'injection':
+                    (source / 'font;reboot;#.pf2').write_bytes(b'font')
+                if invalid == 'modified-font':
+                    (source / 'font.pf2').write_bytes(b'modified')
                 if invalid == 'symlink':
+                    (source / 'theme.txt').unlink()
                     (source / 'theme.txt').symlink_to(target / 'theme.txt')
                 with self.assertRaises((OSError, ValueError)):
                     self.helper.main()
                 self.assertEqual((target / 'theme.txt').read_text(), 'previous')
+                for asset in source.iterdir():
+                    if asset.name not in ('font.pf2', 'term.pf2'):
+                        asset.unlink()
+                (source / 'font.pf2').write_bytes(b'font')
+
+    def test_missing_font_keeps_previous_theme(self):
+        source, target = self.deployment_environment()
+        target.mkdir()
+        (target / 'theme.txt').write_text('previous')
+        (source / 'theme.txt').write_text('replacement')
+        for name, content in [('font.pf2', b'font'), ('term.pf2', b'term')]:
+            with self.subTest(name=name):
+                (source / name).unlink()
+                try:
+                    with self.assertRaisesRegex(ValueError, 'Missing required theme asset: ' + name):
+                        self.helper.main()
+                    self.assertEqual((target / 'theme.txt').read_text(), 'previous')
+                finally:
+                    (source / name).write_bytes(content)
+
+    def test_disk_full_keeps_previous_theme_and_cleans_staging(self):
+        source, target = self.deployment_environment()
+        target.mkdir()
+        (target / 'theme.txt').write_text('previous')
+        (source / 'theme.txt').write_text('replacement')
+        real_open = open
+
+        def fail_write(path, mode='r', *args, **kwargs):
+            if mode == 'xb':
+                raise OSError(errno.ENOSPC, 'No space left on device')
+            return real_open(path, mode, *args, **kwargs)
+
+        with mock.patch('builtins.open', side_effect=fail_write):
+            with self.assertRaises(OSError) as error:
+                self.helper.main()
+        self.assertEqual(error.exception.errno, errno.ENOSPC)
+        self.assertEqual((target / 'theme.txt').read_text(), 'previous')
+        self.assertEqual(list(target.parent.glob('.adaptive-caelestia-grub-*')), [])
+
+    def test_deployment_waits_for_another_deployment_to_release_the_lock(self):
+        source, target = self.deployment_environment()
+        (source / 'theme.txt').write_text('replacement')
+        context = multiprocessing.get_context('fork')
+        receiver, sender = context.Pipe(duplex=False)
+        flock = self.helper.fcntl.flock
+
+        def deploy():
+            def notify_lock(fd, operation):
+                sender.send('waiting')
+                flock(fd, operation)
+                sender.send('acquired')
+
+            with mock.patch.object(self.helper.fcntl, 'flock', side_effect=notify_lock):
+                self.helper.main()
+            sender.send('done')
+
+        with open(target.parent / '.adaptive-caelestia-grub.lock', 'wb') as lock:
+            flock(lock, self.helper.fcntl.LOCK_EX)
+            process = context.Process(target=deploy)
+            process.start()
+            try:
+                self.assertTrue(receiver.poll(5))
+                self.assertEqual(receiver.recv(), 'waiting')
+                self.assertFalse(receiver.poll(0.1))
+                self.assertFalse(target.exists())
+                flock(lock, self.helper.fcntl.LOCK_UN)
+                for status in ['acquired', 'done']:
+                    self.assertTrue(receiver.poll(5))
+                    self.assertEqual(receiver.recv(), status)
+                process.join(5)
+                self.assertEqual(process.exitcode, 0)
+            finally:
+                flock(lock, self.helper.fcntl.LOCK_UN)
+                if process.is_alive():
+                    process.terminate()
+                process.join(5)
+                receiver.close()
+                sender.close()
+        self.assertEqual((target / 'theme.txt').read_text(), 'replacement')
 
     def test_failed_publish_restores_previous_theme(self):
         source, target = self.deployment_environment()
@@ -272,15 +440,41 @@ class DeploymentSecurityTests(unittest.TestCase):
         (source / 'theme.txt').write_text('replacement')
         rename = os.rename
 
-        def fail_publish(src, dst):
-            if Path(src).name == 'payload':
-                raise OSError('Simulated publish failure')
-            return rename(src, dst)
+        for error in [OSError('Simulated publish failure'), KeyboardInterrupt()]:
+            def fail_publish(src, dst):
+                if Path(src).name == 'payload':
+                    raise error
+                return rename(src, dst)
 
-        with mock.patch.object(self.helper.os, 'rename', side_effect=fail_publish):
-            with self.assertRaises(OSError):
-                self.helper.main()
-        self.assertEqual((target / 'theme.txt').read_text(), 'previous')
+            with self.subTest(error=type(error).__name__):
+                with mock.patch.object(self.helper.os, 'rename', side_effect=fail_publish):
+                    with self.assertRaises(type(error)):
+                        self.helper.main()
+                self.assertEqual((target / 'theme.txt').read_text(), 'previous')
+
+
+class FontApprovalTests(unittest.TestCase):
+    def test_helper_metadata_records_only_bundled_fonts_and_serializes_username(self):
+        username = "user'; raise Exception('injected'); #"
+        result = subprocess.run([sys.executable, '-I', '-', username, str(ROOT / 'theme')],
+                                input=python_blocks(INSTALL)[2], text=True,
+                                capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        assignments = {node.targets[0].id: ast.literal_eval(node.value)
+                       for node in ast.parse(result.stdout).body if isinstance(node, ast.Assign)}
+        self.assertEqual(assignments['INSTALL_USER'], username)
+        self.assertEqual(assignments['FONT_HASHES'], {
+            name: hashlib.sha256((ROOT / 'theme' / name).read_bytes()).hexdigest()
+            for name in ('font.pf2', 'term.pf2')})
+
+    def test_missing_fonts_prevent_helper_publication(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run([sys.executable, '-I', '-', 'user', directory],
+                                    input=python_blocks(INSTALL)[2], text=True,
+                                    capture_output=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('ERROR: Could not approve bundled fonts:', result.stderr)
+            self.assertEqual(result.stdout, '')
 
 
 class InstallationPathSecurityTests(unittest.TestCase):
