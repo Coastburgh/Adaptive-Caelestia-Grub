@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtQuick import QQuickView
 from PyQt6.QtCore import QUrl, QTimer, QRectF, Qt
 from PyQt6.QtGui import QImage, QPainter, QColor, QPen
+from PIL.ImageQt import ImageQt
 
 def strip_ansi(text):
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
@@ -319,9 +320,8 @@ def create_wallpaper(scheme_colors, scheme_meta, shell_cfg):
             img = ImageOps.grayscale(img).convert("RGB")
         if should_recolor_active and scheme_meta.get("Flavour") == "hard":
             img = ImageEnhance.Contrast(img).enhance(1.45)
-        sharp_path = os.path.join(directory, "sharp.png")
-        img.save(sharp_path)
-        qimg = QImage(sharp_path)
+        # Own the Qt buffer independently of Pillow before painting or saving it.
+        qimg = ImageQt(img).copy()
         if should_recolor_active and not is_monochrome:
             strength = shell_cfg.get("wallpaperRecolorStrength", 1.0)
             if strength > 0:
@@ -367,11 +367,10 @@ def create_panel_bg(scheme_colors, shell_cfg, layout):
 def generate_9slice(name, bg_color_hex, shell_cfg, border_color_hex=None, radius=None, alpha_override=None, exact_height=None, max_height=None):
     if exact_height is not None:
         h = exact_height
+    elif max_height is not None:
+        h = max_height
     else:
-        if max_height is not None:
-            h = max_height
-        else:
-            h = 42
+        h = 42
             
     if radius is None:
         r = int(shell_cfg.get("rounding_item", 12) * shell_cfg.get("rounding_scale", 1.0))
