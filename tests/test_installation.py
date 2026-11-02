@@ -16,6 +16,13 @@ NAME = "adaptive-caelestia-grub"
 
 
 class InstallationNameTests(unittest.TestCase):
+    def test_privileged_scripts_use_builtin_euid_for_root_check(self):
+        for script in ("install", "uninstall"):
+            with self.subTest(script=script):
+                text = (ROOT / f"scripts/{script}.sh").read_text()
+                self.assertIn('if [ "$EUID" -ne 0 ]; then', text)
+                self.assertNotIn("id -u", text)
+
     def test_installation_paths_match_across_scripts(self):
         for script in ("install", "uninstall", "sync"):
             with self.subTest(script=script):
