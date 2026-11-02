@@ -17,12 +17,12 @@ REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-LOCAL_SHARE="$REAL_HOME/.local/share/caelestia-grub"
-GRUB_THEME_DIR="/boot/grub/themes/caelestia-nexus"
-DEPLOY_SCRIPT="$PREFIX/bin/caelestia-grub-deploy"
+LOCAL_SHARE="$REAL_HOME/.local/share/adaptive-caelestia-grub"
+GRUB_THEME_DIR="/boot/grub/themes/adaptive-caelestia-grub"
+DEPLOY_SCRIPT="$PREFIX/bin/adaptive-caelestia-grub-deploy"
 
 echo "============================================================"
-echo "          Installing Caelestia Nexus GRUB Theme"
+echo "          Installing Adaptive Caelestia Grub"
 echo "============================================================"
 
 echo "1. Copying files to local share ($LOCAL_SHARE)..."
@@ -47,8 +47,8 @@ EOF
 chmod +x "$DEPLOY_SCRIPT"
 
 # Configure passwordless sudo for the deploy script
-echo "$SUDO_USER ALL=(root) NOPASSWD: $DEPLOY_SCRIPT" > /etc/sudoers.d/caelestia-grub-sync
-chmod 440 /etc/sudoers.d/caelestia-grub-sync
+echo "$SUDO_USER ALL=(root) NOPASSWD: $DEPLOY_SCRIPT" > /etc/sudoers.d/adaptive-caelestia-grub-sync
+chmod 440 /etc/sudoers.d/adaptive-caelestia-grub-sync
 echo "✓ Deploy script and sudoers drop-in created"
 
 echo "3. Running initial generation and sync..."
@@ -58,9 +58,9 @@ echo "✓ Initial sync completed"
 
 echo "4. Updating GRUB configuration..."
 if grep -q "^GRUB_THEME=" /etc/default/grub; then
-    sed -i 's|^GRUB_THEME=.*|GRUB_THEME="/boot/grub/themes/caelestia-nexus/theme.txt"|' /etc/default/grub
+    sed -i 's|^GRUB_THEME=.*|GRUB_THEME="/boot/grub/themes/adaptive-caelestia-grub/theme.txt"|' /etc/default/grub
 else
-    echo 'GRUB_THEME="/boot/grub/themes/caelestia-nexus/theme.txt"' >> /etc/default/grub
+    echo 'GRUB_THEME="/boot/grub/themes/adaptive-caelestia-grub/theme.txt"' >> /etc/default/grub
 fi
 grub-mkconfig -o /boot/grub/grub.cfg
 echo "✓ GRUB updated"

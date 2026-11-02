@@ -5,10 +5,10 @@ set -euo pipefail
 # It runs as the regular user.
 
 PREFIX="${PREFIX:-/usr/local}"
-LOCAL_SHARE="$HOME/.local/share/caelestia-grub"
-DEPLOY_SCRIPT="$PREFIX/bin/caelestia-grub-deploy"
+LOCAL_SHARE="$HOME/.local/share/adaptive-caelestia-grub"
+DEPLOY_SCRIPT="$PREFIX/bin/adaptive-caelestia-grub-deploy"
 
-echo "Syncing Caelestia GRUB theme..."
+echo "Syncing Adaptive Caelestia Grub..."
 
 # 1. Regenerate assets in the user's local directory
 if [ -f "$LOCAL_SHARE/src/generate.py" ]; then
@@ -29,7 +29,7 @@ if [ -f "$DEPLOY_SCRIPT" ]; then
     sudo "$DEPLOY_SCRIPT"
     echo "✓ Deployment complete"
 else
-    echo "✗ Error: caelestia-grub-deploy helper not found at $DEPLOY_SCRIPT. Is the theme properly installed?"
+    echo "✗ Error: adaptive-caelestia-grub-deploy helper not found at $DEPLOY_SCRIPT. Is the theme properly installed?"
     exit 1
 fi
 

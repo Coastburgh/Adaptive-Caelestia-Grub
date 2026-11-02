@@ -1,4 +1,4 @@
-# Adaptive Caelestia GRUB Theme
+# Adaptive Caelestia Grub
 
 A GRUB2 theme for Caelestia with a centered panel that keeps its proportions across different display aspect ratios. The wallpaper fills the screen with proportional cropping. Colors and assets automatically sync when you change your Caelestia scheme or wallpaper.
 
@@ -20,6 +20,8 @@ Example CachyOS boot entries rendered with dark and light schemes.
 ## Manual installation
 
 Requires a working GRUB2 installation and Caelestia. The scripts target Linux systems using `/boot/grub/grub.cfg`; the dependency commands below are for CachyOS, Arch Linux, and other Arch-based distributions.
+
+For an existing installation, run `sudo bash scripts/uninstall.sh` from the previous checkout before updating, then follow the installation steps below. Installed paths have changed with the program name.
 
 1. Install the dependencies:
 
@@ -46,14 +48,14 @@ Requires a working GRUB2 installation and Caelestia. The scripts target Linux sy
    sudo bash scripts/install.sh
    ```
 
-The installer generates the images and icons, installs the theme in `/boot/grub/themes/caelestia-nexus/`, sets `GRUB_THEME`, and regenerates the GRUB configuration. It also adds Caelestia wallpaper and scheme hooks for automatic updates, including a passwordless sudo rule for the deployment helper. The theme appears at the next boot.
+The installer generates the images and icons, installs the theme in `/boot/grub/themes/adaptive-caelestia-grub/`, sets `GRUB_THEME`, and regenerates the GRUB configuration. It also adds Caelestia wallpaper and scheme hooks for automatic updates, including a passwordless sudo rule for the deployment helper. The theme appears at the next boot.
 
 ## Manual sync
 
 Wallpaper and scheme changes trigger syncing automatically. To regenerate and deploy the installed theme manually:
 
 ```bash
-bash ~/.local/share/caelestia-grub/scripts/sync.sh
+bash ~/.local/share/adaptive-caelestia-grub/scripts/sync.sh
 ```
 
 Panel sizing is calculated during generation from the configured GRUB resolution or detected display. Wallpaper cropping and centering are applied by GRUB at boot.

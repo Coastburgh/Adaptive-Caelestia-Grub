@@ -1,4 +1,4 @@
-# GRUB2 Theme - Caelestia Nexus
+# GRUB2 Theme - Adaptive Caelestia Grub
 title-text: ""
 desktop-image: "background.png"
 desktop-image-scale-method: "crop"

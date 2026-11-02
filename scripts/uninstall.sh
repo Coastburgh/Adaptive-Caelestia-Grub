@@ -13,12 +13,12 @@ fi
 
 PREFIX="${PREFIX:-/usr/local}"
 REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-LOCAL_SHARE="$REAL_HOME/.local/share/caelestia-grub"
-GRUB_THEME_DIR="/boot/grub/themes/caelestia-nexus"
-DEPLOY_SCRIPT="$PREFIX/bin/caelestia-grub-deploy"
+LOCAL_SHARE="$REAL_HOME/.local/share/adaptive-caelestia-grub"
+GRUB_THEME_DIR="/boot/grub/themes/adaptive-caelestia-grub"
+DEPLOY_SCRIPT="$PREFIX/bin/adaptive-caelestia-grub-deploy"
 
 echo "============================================================"
-echo "         Uninstalling Caelestia Nexus GRUB Theme"
+echo "         Uninstalling Adaptive Caelestia Grub"
 echo "============================================================"
 
 echo "1. Removing GRUB theme files..."
@@ -26,7 +26,7 @@ rm -rf "$GRUB_THEME_DIR"
 
 echo "2. Removing deployment hooks and scripts..."
 rm -f "$DEPLOY_SCRIPT"
-rm -f /etc/sudoers.d/caelestia-grub-sync
+rm -f /etc/sudoers.d/adaptive-caelestia-grub-sync
 rm -rf "$LOCAL_SHARE"
 
 echo "3. Removing Caelestia CLI postHook..."
