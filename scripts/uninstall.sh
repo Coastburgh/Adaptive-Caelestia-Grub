@@ -11,8 +11,18 @@ if [ -z "${SUDO_USER:-}" ]; then
   exit 1
 fi
 
+# Privileged commands must not resolve executables through a caller-controlled PATH.
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 PREFIX="${PREFIX:-/usr/local}"
 REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+if [[ "$REAL_HOME" != /* || "$REAL_HOME" == / || "$SUDO_USER" == root ]]; then
+  echo "ERROR: A regular user with an absolute home directory is required." >&2
+  exit 1
+fi
+if [[ "$PREFIX" != /* || "$PREFIX" == *[^/a-zA-Z0-9_-]* ]]; then
+  echo "ERROR: PREFIX must be an absolute path using letters, digits, /, _ or -." >&2
+  exit 1
+fi
 LOCAL_SHARE="$REAL_HOME/.local/share/adaptive-caelestia-grub"
 GRUB_THEME_DIR="/boot/grub/themes/adaptive-caelestia-grub"
 DEPLOY_SCRIPT="$PREFIX/bin/adaptive-caelestia-grub-deploy"
@@ -27,36 +37,56 @@ rm -rf "$GRUB_THEME_DIR"
 echo "2. Removing deployment hooks and scripts..."
 rm -f "$DEPLOY_SCRIPT"
 rm -f /etc/sudoers.d/adaptive-caelestia-grub-sync
-rm -rf "$LOCAL_SHARE"
+sudo -u "$SUDO_USER" rm -rf -- "$LOCAL_SHARE"
 
 echo "3. Removing Caelestia CLI postHook..."
 CLI_JSON="$REAL_HOME/.config/caelestia/cli.json"
-# We escape the prefix since it was embedded in the hook command
-HOOK_CMD="export PREFIX=$PREFIX; bash $LOCAL_SHARE/scripts/sync.sh"
+# Match both safely quoted hooks and hooks written by earlier installers.
+printf -v HOOK_CMD 'export PREFIX=%q; bash %q' "$PREFIX" "$LOCAL_SHARE/scripts/sync.sh"
+LEGACY_HOOK_CMD="export PREFIX=$PREFIX; bash $LOCAL_SHARE/scripts/sync.sh"
 
-sudo -u "$SUDO_USER" python3 -c "
-import json, os
-path = '$CLI_JSON'
-if os.path.exists(path):
-    with open(path) as f:
-        data = json.load(f)
-    
-    changed = False
-    for section in ['wallpaper', 'theme']:
-        if section in data and 'postHook' in data[section]:
-            hooks = data[section]['postHook'].split(' && ')
-            if '$HOOK_CMD' in hooks:
-                hooks.remove('$HOOK_CMD')
-                if hooks:
-                    data[section]['postHook'] = ' && '.join(hooks)
-                else:
-                    del data[section]['postHook']
-                changed = True
+sudo -u "$SUDO_USER" python3 -I - "$CLI_JSON" "$HOOK_CMD" "$LEGACY_HOOK_CMD" <<'PYTHON'
+import json
+import os
+import sys
+import tempfile
 
-    if changed:
-        with open(path, 'w') as f:
-            json.dump(data, f, indent=4)
-"
+try:
+    path, hook, legacy_hook = sys.argv[1:]
+    if os.path.exists(path):
+        with open(path) as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            sys.exit("ERROR: Caelestia CLI configuration must be an object.")
+
+        changed = False
+        for section in ['wallpaper', 'theme']:
+            if section in data:
+                settings = data[section]
+                if not isinstance(settings, dict) or not isinstance(settings.get('postHook', ''), str):
+                    sys.exit("ERROR: Invalid Caelestia hook configuration.")
+                if 'postHook' in settings:
+                    hooks = settings['postHook'].split(' && ')
+                    remaining = [item for item in hooks if item not in (hook, legacy_hook)]
+                    if hooks != remaining:
+                        if remaining:
+                            settings['postHook'] = ' && '.join(remaining)
+                        else:
+                            del settings['postHook']
+                        changed = True
+
+        if changed:
+            fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path))
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    json.dump(data, f, indent=4)
+                os.replace(temporary, path)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+except (OSError, ValueError) as error:
+    sys.exit("ERROR: Could not update Caelestia CLI configuration: " + str(error))
+PYTHON
 
 echo "4. Reverting GRUB configuration..."
 if grep -q "^GRUB_THEME=\"$GRUB_THEME_DIR" /etc/default/grub; then
